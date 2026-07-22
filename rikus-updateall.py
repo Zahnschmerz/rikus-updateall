@@ -34,7 +34,7 @@ import gi
 gi.require_version('Gtk', '3.0')
 from gi.repository import Gtk, Pango, GLib, Gdk           # noqa: E402
 
-VERSION = '1.1'
+VERSION = '1.2'
 PROGRAMM = 'Rikus Updateall'
 
 # Ein Programm, das Updates meldet, muss sich selbst prüfen können - alles
@@ -588,6 +588,15 @@ SPEICHER_HAELT = 6 * 3600          # Sekunden - sechs Stunden
 
 GESPERRT = {'bis': 0}              # merkt sich, wann GitHub wieder darf
 
+# 🔴 Drueckt der Nutzer auf „Erneut pruefen", MUSS der Zwischenspeicher
+# uebersprungen werden. Sonst liest der Knopf nur die alten Antworten wieder
+# vor und meldet weiter „aktuell", obwohl es laengst etwas Neues gibt - bis zu
+# sechs Stunden lang. Genau das ist am 22.07.2026 passiert: Eine frisch
+# veroeffentlichte Fassung wurde auf einem Rechner nicht angeboten, und auch
+# wiederholtes Druecken aenderte nichts.
+# Regel: Die Automatik schont das Kontingent, der Knopf des Nutzers hat Vorrang.
+NEU_LADEN = {'an': False}
+
 
 def _speicher_lesen():
     try:
@@ -621,7 +630,8 @@ def _netz(url, schluessel=None):
     schluessel = schluessel or url
     speicher = _speicher_lesen()
     eintrag = speicher.get(schluessel)
-    if eintrag and (time.time() - eintrag.get('zeit', 0)) < SPEICHER_HAELT:
+    if (eintrag and not NEU_LADEN['an']
+            and (time.time() - eintrag.get('zeit', 0)) < SPEICHER_HAELT):
         return eintrag.get('wert')
 
     try:
@@ -1351,7 +1361,9 @@ class RikusAktuell(Gtk.Window):
         fuss = Gtk.Box(spacing=8)
         fuss.set_border_width(16)
         self.knopf_pruefen = Gtk.Button(label=t('Erneut prüfen', 'Check again'))
-        self.knopf_pruefen.connect('clicked', lambda *_: self.suche_starten())
+        # Der Knopf des Nutzers holt IMMER frisch - er ist die ausdrueckliche
+        # Aufforderung nachzusehen, nicht die Bitte, Altes vorzulesen.
+        self.knopf_pruefen.connect('clicked', lambda *_: self.suche_starten(frisch=True))
         fuss.pack_start(self.knopf_pruefen, False, False, 0)
 
         # Der frühere Sammelknopf ist weg: Jede Zeile hat ihren eigenen. Ein
@@ -1397,7 +1409,8 @@ class RikusAktuell(Gtk.Window):
             f"<span size='small'>{sicher(text)}</span>")
 
     # -- Suche -------------------------------------------------------------
-    def suche_starten(self):
+    def suche_starten(self, frisch=False):
+        NEU_LADEN['an'] = bool(frisch)
         self.knopf_pruefen.set_sensitive(False)
         for kind in self.liste.get_children():
             self.liste.remove(kind)
@@ -1814,6 +1827,7 @@ class RikusAktuell(Gtk.Window):
                 'Everything on this machine comes from apt.'))
 
     def _fertig(self):
+        NEU_LADEN['an'] = False        # nur dieser eine Durchgang war frisch
         self.knopf_pruefen.set_sensitive(True)
         return False
 

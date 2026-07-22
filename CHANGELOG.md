@@ -3,6 +3,21 @@
 Alle nennenswerten Änderungen an Rikus Updateall.
 All notable changes to Rikus Updateall.
 
+## 1.2 — 22.07.2026
+
+### Deutsch
+- 🔴 **Behoben: „Erneut prüfen" holte nichts Neues.** Um GitHubs Abfragegrenze zu schonen, merkt
+  sich das Programm Antworten sechs Stunden lang. Dieser Zwischenspeicher galt auch beim Druck auf
+  *Erneut prüfen* — der Knopf las also nur die alten Antworten wieder vor und meldete weiter
+  „aktuell", obwohl es längst eine neue Fassung gab. Jetzt gilt: **die Automatik schont das
+  Kontingent, der Knopf des Nutzers holt immer frisch.**
+
+### English
+- 🔴 **Fixed: "Check again" fetched nothing new.** To respect GitHub's rate limit the program
+  remembers answers for six hours. That cache also applied when the user pressed *Check again*,
+  so the button merely re-read old answers and kept reporting "up to date" although a new version
+  existed. Now: **the automatic check spares the quota, the user's button always fetches fresh.**
+
 ## 1.1 — 22.07.2026
 
 ### Deutsch
