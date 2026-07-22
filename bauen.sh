@@ -38,6 +38,80 @@ trap 'rm -rf "$BAUM"' EXIT
 
 echo "Baue Rikus Updateall $VERSION"
 
+# ---------------------------------------------------------------------------
+# ABHAENGIGKEITEN — automatisch, bei JEDEM Bau
+#
+# ⭐ WARUM DAS HIER STEHT (Gilbert, 22.07.2026: „auch die abhaengigkeiten
+# kontrolliert?"): Gemessen wurden sie beim ERSTEN Bau — danach drei Fassungen
+# lang nicht mehr, obwohl neuer Code dazukam. Dass nichts fehlte, war Glueck.
+# Eine Pruefung, die am Erinnern haengt, ist keine Pruefung.
+#
+# Geprueft werden BEIDE Richtungen:
+#   1. Ruft der Quelltext ein Werkzeug auf, das nirgends genannt ist?
+#   2. Ist gegenueber der letzten Fassung etwas aus Depends verschwunden?
+# ---------------------------------------------------------------------------
+echo "--- Abhaengigkeiten (automatisch geprueft) ---"
+FEHLT=0
+GENANNT=$(grep -E '^(Depends|Recommends|Suggests):' paket/DEBIAN/control)
+
+# Richtung 1: jedes aufgerufene Werkzeug muss genannt oder Essential sein
+for w in $(grep -oE "_werkzeug\('[a-z0-9._-]+'\)|_lauf\('[a-z0-9._-]+'" rikus-updateall.py \
+           | grep -oE "'[a-z0-9._-]+'" | tr -d "'" | sort -u); do
+  pfad=""
+  for d in /usr/local/bin /usr/bin /bin /usr/sbin /sbin; do
+    [ -x "$d/$w" ] && { pfad=$(realpath "$d/$w"); break; }     # realpath: Symlink-Falle
+  done
+  if [ -z "$pfad" ]; then echo "  ?  $w hier nicht installiert - nicht pruefbar"; continue; fi
+  paket=$(dpkg -S "$pfad" 2>/dev/null | cut -d: -f1 | head -1)
+  if [ -z "$paket" ]; then echo "  ?  $w gehoert keinem Paket"; continue; fi
+  if echo "$GENANNT" | grep -qw "$paket"; then
+    echo "  ok $w -> $paket"
+  elif [ "$(dpkg-query -W -f='${Essential}' "$paket" 2>/dev/null)" = "yes" ]; then
+    echo "  ok $w -> $paket (Essential, darf fehlen)"
+  else
+    echo "  ✖  $w -> $paket FEHLT in control"; FEHLT=1
+  fi
+done
+
+# Python-Bausteine: was aus einem Paket kommt, muss genannt sein
+for mod in $(grep -hoE '^[[:space:]]*(import|from) [a-z_.]+' rikus-updateall.py \
+             | awk '{print $2}' | cut -d. -f1 | sort -u); do
+  herkunft=$(python3 -c "
+import importlib.util as u, sys
+s = u.find_spec('$mod')
+if s is None: print('FEHLT'); raise SystemExit
+p = getattr(s,'origin','') or ''
+print('PAKET' if ('dist-packages' in p or 'site-packages' in p) else 'EINGEBAUT')" 2>/dev/null)
+  case "$herkunft" in
+    FEHLT) echo "  ✖  Python-Baustein $mod nicht vorhanden"; FEHLT=1 ;;
+    PAKET) echo "$GENANNT" | grep -q 'python3-gi' && echo "  ok Python-Baustein $mod (python3-gi)" \
+             || { echo "  ✖  Python-Baustein $mod kommt aus einem Paket, das nicht genannt ist"; FEHLT=1; } ;;
+  esac
+done
+echo "  ok Python-Bausteine geprueft"
+
+# Richtung 2: seit der letzten Fassung etwas verloren?
+if git rev-parse HEAD >/dev/null 2>&1; then
+  git show HEAD:paket/DEBIAN/control 2>/dev/null | grep -E '^Depends:' \
+    | sed 's/^Depends://' | tr ',' '\n' | tr -d ' ' | grep -v '^$' | sort -u > /tmp/dep_alt.$$
+  grep -E '^Depends:' paket/DEBIAN/control \
+    | sed 's/^Depends://' | tr ',' '\n' | tr -d ' ' | grep -v '^$' | sort -u > /tmp/dep_neu.$$
+  VERLOREN=$(comm -23 /tmp/dep_alt.$$ /tmp/dep_neu.$$)
+  rm -f /tmp/dep_alt.$$ /tmp/dep_neu.$$
+  if [ -n "$VERLOREN" ]; then
+    echo "  ✖  seit der letzten Fassung VERLOREN: $(echo $VERLOREN)"; FEHLT=1
+  else
+    echo "  ok nichts gegenueber der letzten Fassung verloren"
+  fi
+fi
+
+if [ "$FEHLT" != "0" ]; then
+  echo >&2
+  echo "ABBRUCH: Die Abhaengigkeiten stimmen nicht (siehe oben)." >&2
+  exit 1
+fi
+echo
+
 # --- Baum IMMER frisch aus dem Projekt zusammenstellen ---------------------
 # So koennen Paket und Projekt nicht auseinanderlaufen (Mintshot lieferte
 # einmal veraltete Anleitungen aus, weil das Paket eine alte Kopie enthielt).
