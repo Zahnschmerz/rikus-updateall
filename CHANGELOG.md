@@ -3,6 +3,23 @@
 Alle nennenswerten Änderungen an Rikus Updateall.
 All notable changes to Rikus Updateall.
 
+## 1.4 — 22.07.2026
+
+### Deutsch
+- 🔴 **Behoben: `.deb`-Pakete ohne Architektur im Namen wurden nicht gefunden.** Programme, die
+  auf jedem Rechner laufen, heißen `…_all.deb` (manche Projekte schreiben `noarch`). Die Suche
+  achtete nur auf die Architektur des Rechners (`amd64`) und fand deshalb gar nichts — das
+  Programm konnte **nicht einmal sein eigenes Update holen**. Aufgefallen, als der `.deb`-Weg zum
+  ersten Mal wirklich ausgelöst wurde.
+- Gleichzeitig werden Pakete für fremde Architekturen jetzt ausdrücklich ausgeschlossen.
+
+### English
+- 🔴 **Fixed: `.deb` packages without an architecture in the name were never found.** Programs
+  that run anywhere are named `…_all.deb` (some projects use `noarch`). The search only looked for
+  the machine's architecture and therefore found nothing — the program could **not even fetch its
+  own update**. Found when the `.deb` path was first actually exercised.
+- Packages for foreign architectures are now explicitly excluded.
+
 ## 1.3 — 22.07.2026
 
 ### Deutsch

@@ -38,7 +38,7 @@ es noch nie gesehen hat. Findet sich nichts, trägt man die Projektseite **einma
 ## Installieren
 
 ```
-sudo apt install ./rikus-updateall_1.3_all.deb
+sudo apt install ./rikus-updateall_1.4_all.deb
 ```
 
 Danach im Startmenü unter *System*.

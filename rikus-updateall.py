@@ -34,7 +34,7 @@ import gi
 gi.require_version('Gtk', '3.0')
 from gi.repository import Gtk, Pango, GLib, Gdk           # noqa: E402
 
-VERSION = '1.3'
+VERSION = '1.4'
 PROGRAMM = 'Rikus Updateall'
 
 # Ein Programm, das Updates meldet, muss sich selbst prüfen können - alles
@@ -1361,8 +1361,18 @@ def deb_erneuern(fund, melden=lambda text: None):
                         'The vendor is not answering right now.')
 
     _, kurz = maschine()
+    # 🔴 NICHT nur nach der Architektur suchen! Pakete, die auf jedem Rechner
+    # laufen (reine Skripte, Python-Programme), heissen `_all.deb` - manche
+    # Projekte schreiben auch `noarch`. Die erste Fassung suchte nur nach
+    # `amd64` und fand deshalb NICHTS: Das Programm konnte nicht einmal sein
+    # eigenes Update holen, denn das heisst `rikus-updateall_1.3_all.deb`.
+    # Aufgefallen erst, als der .deb-Weg zum ersten Mal wirklich ausgeloest wurde.
+    erlaubt = (kurz, 'all', 'noarch')
+    fremd = ('arm64', 'armhf', 'aarch64', 'i386', 'i686', 'ppc64', 'riscv', 'armel')
     passend = [d for d in (daten.get('assets') or [])
-               if d['name'].lower().endswith('.deb') and kurz in d['name'].lower()]
+               if d['name'].lower().endswith('.deb')
+               and any(a in d['name'].lower() for a in erlaubt)
+               and not any(x in d['name'].lower() for x in fremd if x != kurz)]
     if not passend:
         return False, t(
             f'Der Hersteller bietet für diese Fassung kein .deb für {kurz} an.\n'
