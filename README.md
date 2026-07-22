@@ -38,7 +38,7 @@ seen. If nothing is found, you enter the project page **once**.
 ## Install
 
 ```
-sudo apt install ./rikus-updateall_1.0_all.deb
+sudo apt install ./rikus-updateall_1.1_all.deb
 ```
 
 Then find it in the start menu under *System*.

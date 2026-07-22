@@ -3,6 +3,21 @@
 Alle nennenswerten Änderungen an Rikus Updateall.
 All notable changes to Rikus Updateall.
 
+## 1.1 — 22.07.2026
+
+### Deutsch
+- Mehr Programme mit eigenem Aktualisierer erkannt: `rustup`, `deno`, `bun`, `pnpm`, `micro`
+  (bisher nur `rclone` und `claude`). Diese Programme wissen selbst am besten, woher ihre neue
+  Fassung kommt — ihr Weg ist immer besser als ein nachgebauter.
+- Kommentare im Quelltext verallgemeinert, damit sie auf jedem Rechner gelten und nicht auf
+  die Geräte des Entwicklers verweisen.
+
+### English
+- More programs with their own updater recognised: `rustup`, `deno`, `bun`, `pnpm`, `micro`
+  (previously only `rclone` and `claude`). Those programs know best where their new version
+  comes from — their own path always beats a rebuilt one.
+- Source comments generalised so they apply on any machine.
+
 ## 1.0 — 22.07.2026
 
 **Erste Fassung. / First release.**

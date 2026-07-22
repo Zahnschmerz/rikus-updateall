@@ -37,7 +37,7 @@ Es läuft **mit und ohne systemd** — also auch auf MX Linux und antiX.
 Laden Sie die Datei `rikus-updateall_<Fassung>_all.deb` herunter und installieren Sie sie:
 
 ```
-sudo apt install ./rikus-updateall_1.0_all.deb
+sudo apt install ./rikus-updateall_1.1_all.deb
 ```
 
 Danach steht **Rikus Updateall** im Startmenü unter *System*.
