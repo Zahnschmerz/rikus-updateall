@@ -34,7 +34,7 @@ import gi
 gi.require_version('Gtk', '3.0')
 from gi.repository import Gtk, Pango, GLib, Gdk           # noqa: E402
 
-VERSION = '1.2'
+VERSION = '1.3'
 PROGRAMM = 'Rikus Updateall'
 
 # Ein Programm, das Updates meldet, muss sich selbst prüfen können - alles
@@ -768,6 +768,89 @@ def wird_synchronisiert(pfad):
 
 SICHERUNGSORDNER = os.path.expanduser('~/Dokumente')
 
+# ---------------------------------------------------------------------------
+# RUECKGAENGIG — was wurde wohin gesichert?
+# Ohne dieses Merkbuch muesste der Nutzer selbst wissen, welche Datei in
+# ~/Dokumente zu welchem Programm gehoert und wohin sie zurueckgehoert.
+# ---------------------------------------------------------------------------
+RUECKWEG_DATEI = os.path.join(KONFIG_ORDNER, 'rueckweg.json')
+
+
+def rueckwege():
+    try:
+        with open(RUECKWEG_DATEI, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+def rueckweg_merken(name, gesichert, alte_version, neuer_ort, sorte):
+    """Nach einem Update festhalten, wie man zurueckkommt."""
+    daten = rueckwege()
+    daten[name] = {'gesichert': gesichert, 'alte_version': alte_version,
+                   'ort': neuer_ort, 'sorte': sorte}
+    try:
+        os.makedirs(KONFIG_ORDNER, exist_ok=True)
+        with open(RUECKWEG_DATEI, 'w', encoding='utf-8') as f:
+            json.dump(daten, f, indent=1)
+    except OSError:
+        pass
+
+
+def rueckweg_vergessen(name):
+    daten = rueckwege()
+    if daten.pop(name, None) is not None:
+        try:
+            with open(RUECKWEG_DATEI, 'w', encoding='utf-8') as f:
+                json.dump(daten, f, indent=1)
+        except OSError:
+            pass
+
+
+def zurueck_holen(name):
+    """Die gesicherte Fassung wieder an ihren Platz legen. (True/False, Text).
+
+    Fuer AppImages und Programmdateien. Bei .deb-Paketen gibt es keine
+    Sicherungsdatei - dort ist der Rueckweg das aeltere Paket beim Hersteller.
+    """
+    eintrag = rueckwege().get(name)
+    if not eintrag:
+        return False, t('Für dieses Programm ist keine gesicherte Fassung vermerkt.',
+                        'No saved version recorded for this program.')
+    gesichert, ort = eintrag['gesichert'], eintrag['ort']
+    if not os.path.exists(gesichert):
+        return False, t(f'Die gesicherte Fassung liegt nicht mehr in\n  {gesichert}',
+                        f'The saved version is no longer in\n  {gesichert}')
+
+    if eintrag['sorte'] == 'appimage':
+        try:
+            if os.path.exists(ort):
+                os.remove(ort)
+            shutil.move(gesichert, ort)
+            os.chmod(ort, 0o755)
+        except Exception as fehler:
+            return False, t(f'Zurücklegen fehlgeschlagen: {fehler}', f'Restore failed: {fehler}')
+    else:
+        # Systemordner: ein Befehl mit Passwort, wie beim Ersetzen auch
+        import shlex
+        befehl = (f'install -m 755 {shlex.quote(gesichert)} {shlex.quote(ort)} && '
+                  f'rm -f {shlex.quote(gesichert)}')
+        try:
+            e = subprocess.run([_werkzeug('pkexec') or 'pkexec', '/bin/sh', '-c', befehl],
+                               capture_output=True, text=True, timeout=180)
+        except Exception as fehler:
+            return False, t(f'Nicht durchgelaufen: {fehler}', f'Failed: {fehler}')
+        if e.returncode == 126:
+            return False, t('Abgebrochen — es wurde kein Passwort eingegeben.',
+                            'Cancelled — no password entered.')
+        if e.returncode != 0:
+            return False, t(f'Nicht durchgelaufen: {(e.stderr or "").strip()[:200]}',
+                            f'Failed: {(e.stderr or "").strip()[:200]}')
+
+    rueckweg_vergessen(name)
+    return True, t(f'✔ Die vorherige Fassung ({eintrag["alte_version"]}) liegt wieder in\n  {ort}',
+                   f'✔ The previous version ({eintrag["alte_version"]}) is back in\n  {ort}')
+
 
 def sicherungsort(pfad):
     """Wohin mit der alten Fassung? Nach ~/Dokumente.
@@ -821,6 +904,72 @@ def passendes_archiv(dateien, programmname):
     # Ausweichloesung. Wer glibc hat - und Debian/MX hat es - nimmt gnu.
     gnu = [d for d in gut if 'gnu' in d['name'].lower()]
     return (gnu or gut)[0]
+
+
+def _sha256(pfad):
+    import hashlib
+    h = hashlib.sha256()
+    with open(pfad, 'rb') as f:
+        for brocken in iter(lambda: f.read(262144), b''):
+            h.update(brocken)
+    return h.hexdigest()
+
+
+def echtheit_pruefen(angebot, dateiname, pfad):
+    """Bietet der Hersteller eine Prüfsumme an? Dann vergleichen.
+
+    Rückgabe: (True, Text) geprüft und stimmt · (False, Text) stimmt NICHT ·
+              (None, Text) keine Prüfsumme angeboten.
+
+    ⭐ WARUM: Größe und Dateityp allein sagen nur, dass etwas ankam - nicht,
+    dass es das Richtige ist. Viele Projekte legen eine `.sha256`-Datei oder
+    eine Sammeldatei (SHA256SUMS) neben das Paket. Wer die ignoriert, verzichtet
+    auf eine Prüfung, die der Hersteller extra bereitstellt.
+    """
+    import urllib.request
+    kandidaten, sammel = [], []
+    for a in angebot:
+        n = a['name'].lower()
+        if n in (dateiname.lower() + '.sha256', dateiname.lower() + '.sha256sum'):
+            kandidaten.append(a)
+        elif n in ('sha256sums', 'sha256sums.txt', 'checksums.txt', 'checksums.sha256'):
+            sammel.append(a)
+    quelle = (kandidaten or sammel)
+    if not quelle:
+        return (None, t('Der Hersteller bietet keine Prüfsumme an.',
+                        'The vendor offers no checksum.'))
+    try:
+        anfrage = urllib.request.Request(
+            quelle[0]['browser_download_url'],
+            headers={'User-Agent': f'{PROGRAMM}/{VERSION}'})
+        with urllib.request.urlopen(anfrage, timeout=30) as antwort:
+            text = antwort.read().decode('utf-8', 'ignore')
+    except Exception:
+        return (None, t('Die Prüfsummendatei war nicht erreichbar.',
+                        'The checksum file could not be fetched.'))
+
+    erwartet = ''
+    for zeile in text.splitlines():
+        teile = zeile.replace('*', ' ').split()
+        if not teile:
+            continue
+        if len(teile) == 1 and len(teile[0]) == 64:
+            erwartet = teile[0].lower()
+            break
+        if len(teile) >= 2 and teile[-1].strip() == dateiname:
+            erwartet = teile[0].lower()
+            break
+    if not erwartet:
+        return (None, t('In der Prüfsummendatei stand nichts zu dieser Datei.',
+                        'The checksum file had no entry for this file.'))
+
+    ist = _sha256(pfad)
+    if ist == erwartet:
+        return (True, t(f'Prüfsumme des Herstellers stimmt ({ist[:16]}…).',
+                        f'Vendor checksum matches ({ist[:16]}…).'))
+    return (False, t(
+        f'Die Prüfsumme stimmt NICHT.\n  erwartet: {erwartet[:32]}…\n  bekommen: {ist[:32]}…',
+        f'Checksum MISMATCH.\n  expected: {erwartet[:32]}…\n  got:      {ist[:32]}…'))
 
 
 def download_kandidat(fund):
@@ -912,6 +1061,18 @@ def appimage_erneuern(fund, melden=lambda text: None):
         return False, t('Die geladene Datei ist kein ausführbares Programm. Abgebrochen.',
                         'The downloaded file is not an executable. Aborted.')
 
+    # --- Echtheit: bietet der Hersteller eine Prüfsumme an? ---
+    art2, ziel2 = quelle_fuer(fund)
+    angebot = (_netz(f'https://api.github.com/repos/{ziel2}/releases/latest')
+               or {}).get('assets') or []
+    echt, echt_text = echtheit_pruefen(angebot, name, zwischen)
+    if echt is False:
+        os.remove(zwischen)
+        return False, t(
+            f'ABGEBROCHEN — die Datei ist nicht die, die der Hersteller angibt.\n\n{echt_text}\n\n'
+            f'Es wurde nichts ersetzt.',
+            f'ABORTED — the file is not what the vendor states.\n\n{echt_text}\n\nNothing was replaced.')
+
     # --- Erst jetzt anfassen. Die alte Datei wird UMBENANNT, nie geloescht. ---
     gesichert = sicherungsort(fund.ort)
     try:
@@ -938,6 +1099,8 @@ def appimage_erneuern(fund, melden=lambda text: None):
     neuer_name = re.split(r'[_-]v?\d', os.path.basename(neu_pfad))[0]
     if art and ziel:
         quelle_merken(neuer_name, art, ziel)
+    rueckweg_merken(neuer_name or fund.name, gesichert, fund.version,
+                    neu_pfad, 'appimage')
 
     fund.ort = neu_pfad
     fund.name = neuer_name or fund.name
@@ -945,8 +1108,11 @@ def appimage_erneuern(fund, melden=lambda text: None):
     fund.status = 'aktuell'
     return True, t(
         f'✔ {name}\n   liegt jetzt in {ziel_ordner}\n\n'
-        f'Die alte Fassung wurde nicht gelöscht, sie liegt in:\n   {gesichert}',
+        f'{"✔ " if echt else "⚠️ "}{echt_text}\n\n'
+        f'Die alte Fassung wurde nicht gelöscht, sie liegt in:\n   {gesichert}\n'
+        f'Zum Zurücklegen gibt es jetzt einen Knopf „Rückgängig".',
         f'✔ {name}\n   is now in {ziel_ordner}\n\n'
+        f'{"✔ " if echt else "⚠️ "}{echt_text}\n\n'
         f'The old file was not deleted, it is in:\n   {gesichert}')
 
 
@@ -986,6 +1152,18 @@ def binaer_erneuern(fund, melden=lambda text: None):
         shutil.rmtree(werkbank, ignore_errors=True)
         return False, t(f'Herunterladen fehlgeschlagen: {fehler}',
                         f'Download failed: {fehler}')
+
+    # --- Echtheit: bietet der Hersteller eine Prüfsumme an? ---
+    art2, ziel2 = quelle_fuer(fund)
+    angebot = (_netz(f'https://api.github.com/repos/{ziel2}/releases/latest')
+               or {}).get('assets') or []
+    echt, echt_text = echtheit_pruefen(angebot, name, archiv)
+    if echt is False:
+        shutil.rmtree(werkbank, ignore_errors=True)
+        return False, t(
+            f'ABGEBROCHEN — die Datei ist nicht die, die der Hersteller angibt.\n\n{echt_text}\n\n'
+            f'Es wurde nichts ersetzt.',
+            f'ABORTED — the file is not what the vendor states.\n\n{echt_text}')
 
     # --- Auspacken und die richtige Datei darin suchen ---
     try:
@@ -1057,12 +1235,15 @@ def binaer_erneuern(fund, melden=lambda text: None):
             f'gemessen {jetzt}. Die alte liegt in {gesichert}.',
             f'Replaced, but version mismatch: expected {erwartet}, measured {jetzt}. '
             f'The old one is in {gesichert}.')
+    rueckweg_merken(fund.name, gesichert, fund.version, fund.ort, 'binaer')
     fund.version = jetzt if jetzt != '?' else erwartet
     fund.status = 'aktuell'
     return True, t(
         f'✔ {fund.name} ist jetzt Fassung {fund.version}\n   in {fund.ort}\n\n'
+        f'{"✔ " if echt else "⚠️ "}{echt_text}\n'
         f'Nachgemessen am Programm selbst, nicht nur angenommen.\n'
-        f'Die alte Fassung liegt in:\n   {gesichert}',
+        f'Die alte Fassung liegt in:\n   {gesichert}\n'
+        f'Zum Zurücklegen gibt es jetzt einen Knopf „Rückgängig".',
         f'✔ {fund.name} is now version {fund.version}\n   in {fund.ort}\n\n'
         f'Measured from the program itself, not assumed.\n'
         f'The old version is in:\n   {gesichert}')
@@ -1232,6 +1413,15 @@ def deb_erneuern(fund, melden=lambda text: None):
             f'Abgebrochen, damit nicht das falsche Programm ersetzt wird.',
             f'Downloaded package is “{im_paket}” but “{fund.name}” is installed. Aborted.')
 
+    # --- Echtheit: bietet der Hersteller eine Prüfsumme an? ---
+    echt, echt_text = echtheit_pruefen(daten.get('assets') or [], name, paket)
+    if echt is False:
+        shutil.rmtree(werkbank, ignore_errors=True)
+        return False, t(
+            f'ABGEBROCHEN — das Paket ist nicht das, was der Hersteller angibt.\n\n{echt_text}\n\n'
+            f'Es wurde nichts installiert.',
+            f'ABORTED — the package is not what the vendor states.\n\n{echt_text}')
+
     melden(t('Warte auf dein Passwort …', 'Waiting for your password …'))
     try:
         e = subprocess.run([_werkzeug('pkexec') or 'pkexec',
@@ -1253,6 +1443,7 @@ def deb_erneuern(fund, melden=lambda text: None):
     fund.status = 'aktuell'
     return True, t(
         f'✔ {fund.name}: {vorher} → {jetzt}\n\n'
+        f'{"✔ " if echt else "⚠️ "}{echt_text}\n'
         f'Nachgemessen bei dpkg selbst.\n'
         f'⚠️ Ein .deb wird ersetzt, nicht daneben gelegt — hier gibt es keine '
         f'Sicherungsdatei. Der Rückweg ist das alte Paket vom Hersteller.',
@@ -1525,7 +1716,16 @@ class RikusAktuell(Gtk.Window):
                     and fund.sorte in ('appimage', 'binaer', 'deb', 'flatpak', 'npm')
                     ) or fund.status == 'selbst'
             knopf.set_sensitive(kann)
-            if fund.status == 'unbekannt':
+            # Ist dieses Programm gerade von uns aktualisiert worden? Dann steht
+            # dort statt eines nutzlosen grauen Knopfes der Weg zurueck.
+            zurueck = rueckwege().get(fund.name)
+            if zurueck and fund.status == 'aktuell':
+                knopf.set_label(t('Rückgängig', 'Undo'))
+                knopf.set_sensitive(True)
+                knopf.set_tooltip_text(t(
+                    f'Legt die vorherige Fassung {zurueck["alte_version"]} wieder zurück.',
+                    f'Puts version {zurueck["alte_version"]} back in place.'))
+            elif fund.status == 'unbekannt':
                 # ⭐ KEINE Sackgasse für fremde Nutzer: Wenn nichts automatisch
                 # gefunden wurde, kann der Nutzer die Adresse EINMAL eintragen.
                 # Ohne das wäre das Programm für alle unbrauchbar, deren
@@ -1564,10 +1764,53 @@ class RikusAktuell(Gtk.Window):
                           f'changed.\n\nReason: {type(fehler).__name__}: {fehler}'))
 
     def _vorschau_und_start(self, knopf, fund):
+        zurueck = rueckwege().get(fund.name)
+        if zurueck and fund.status == 'aktuell':
+            self._zurueck_fragen(fund, zurueck, knopf)
+            return
         if fund.status == 'unbekannt':
             self._quelle_eintragen(fund)
             return
         knopf.set_sensitive(False)
+
+    def _zurueck_fragen(self, fund, zurueck, knopf):
+        """Vor dem Zurücklegen ebenso in Klartext zeigen, was passiert."""
+        frage = Gtk.MessageDialog(
+            transient_for=self, modal=True, message_type=Gtk.MessageType.QUESTION,
+            buttons=Gtk.ButtonsType.OK_CANCEL,
+            text=t(f'{fund.name} auf {zurueck["alte_version"]} zurücksetzen?',
+                   f'Roll {fund.name} back to {zurueck["alte_version"]}?'))
+        passwort = zurueck['sorte'] != 'appimage'
+        frage.format_secondary_text(t(
+            f'Ich lege diese Datei wieder an ihren Platz:\n  {zurueck["gesichert"]}\n\n'
+            f'Sie kommt nach:\n  {zurueck["ort"]}\n\n'
+            f'Die jetzige Fassung {fund.version} wird dabei ersetzt.'
+            + (f'\n\nDafür fragt Linux nach deinem Passwort.' if passwort else
+               f'\n\nKein Passwort nötig.'),
+            f'I will put this file back:\n  {zurueck["gesichert"]}\n\nto:\n  {zurueck["ort"]}\n\n'
+            f'The current version {fund.version} will be replaced.'))
+        antwort = frage.run()
+        frage.destroy()
+        if antwort != Gtk.ResponseType.OK:
+            return
+        knopf.set_sensitive(False)
+        knopf.set_label(t('läuft …', 'working …'))
+        threading.Thread(target=self._zurueck_im_hintergrund,
+                         args=(fund, knopf), daemon=True).start()
+
+    def _zurueck_im_hintergrund(self, fund, knopf):
+        geklappt, text = zurueck_holen(fund.name)
+        GLib.idle_add(self._zurueck_fertig, fund, knopf, geklappt, text)
+
+    def _zurueck_fertig(self, fund, knopf, geklappt, text):
+        knopf.set_label(t('Rückgängig', 'Undo'))
+        knopf.set_sensitive(not geklappt)
+        self._sagen(Gtk.MessageType.INFO if geklappt else Gtk.MessageType.ERROR,
+                    t('Zurückgelegt', 'Restored') if geklappt
+                    else t('Nicht durchgelaufen', 'Failed'), text)
+        if geklappt:
+            self.suche_starten(frisch=True)
+        return False
         # Selbst-Aktualisierer und die Wege ohne eigenen Download (Flatpak, npm,
         # .deb) brauchen keine Datei-Vorschau - dort kennt das Werkzeug den Weg.
         if fund.status == 'selbst' or fund.sorte in ('flatpak', 'npm', 'deb'):

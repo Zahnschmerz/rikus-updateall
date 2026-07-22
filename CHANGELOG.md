@@ -3,6 +3,25 @@
 Alle nennenswerten Änderungen an Rikus Updateall.
 All notable changes to Rikus Updateall.
 
+## 1.3 — 22.07.2026
+
+### Deutsch
+- **Rückgängig-Knopf.** Nach einer Aktualisierung steht in der Zeile ein Knopf *Rückgängig*, der
+  die vorherige Fassung wieder an ihren Platz legt. Bisher lag sie zwar sicher in `~/Dokumente`,
+  musste aber von Hand zurückgetragen werden.
+- **Echtheitsprüfung.** Bietet der Hersteller eine Prüfsumme an (`.sha256` neben der Datei oder
+  eine Sammeldatei wie `SHA256SUMS`), wird sie geholt und verglichen. Stimmt sie nicht, bricht
+  das Programm ab, **bevor** irgendetwas ersetzt wird. Bisher wurden nur Dateigröße und Dateityp
+  geprüft — das sagt nur, dass etwas ankam, nicht dass es das Richtige ist.
+- Bietet ein Hersteller keine Prüfsumme an, steht das ehrlich im Ergebnis statt zu schweigen.
+
+### English
+- **Undo button.** After an update the row offers *Undo*, putting the previous version back.
+- **Authenticity check.** If the vendor offers a checksum (`.sha256` beside the file or a
+  collective file such as `SHA256SUMS`), it is fetched and compared. On mismatch the program
+  aborts **before** replacing anything. Previously only size and file type were verified.
+- If no checksum is offered, the result says so instead of staying silent.
+
 ## 1.2 — 22.07.2026
 
 ### Deutsch
