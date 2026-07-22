@@ -24,7 +24,10 @@ und aktualisiert sie auf Knopfdruck.
 
 Aus dem Programm selbst, wo immer das geht — `Homepage`- und `Vcs`-Felder bei Debian-Paketen,
 die eingebaute Update-Angabe bei AppImages. Deshalb funktioniert es auch bei Programmen, die
-es noch nie gesehen hat. Findet sich nichts, trägt man die Projektseite **einmal** ein.
+es noch nie gesehen hat. Findet sich nichts, trägt man **einmal** selbst etwas ein: entweder
+die Projektseite (GitHub, npm, Flathub) **oder** die feste Adresse einer `.deb`-Datei, wie sie
+Hersteller ohne Projektseite anbieten (`…/Minecraft.deb`). Um dort die Fassung abzulesen, wird
+nur der Anfang des Pakets geladen (256 KiB), nicht die ganze Datei.
 
 ## Grundsätze
 

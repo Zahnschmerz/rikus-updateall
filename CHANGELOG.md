@@ -3,6 +3,46 @@
 Alle nennenswerten Änderungen an Rikus Updateall.
 All notable changes to Rikus Updateall.
 
+## 1.7 — 22.07.2026
+
+**Der vierte Weg, eine Quelle einzutragen: die feste Download-Adresse.**
+
+* ⭐ **Programme ohne GitHub waren bisher eine Sackgasse.** Der Knopf „Quelle eintragen"
+  nahm nur GitHub-, npm- und Flathub-Adressen an. Viele Hersteller — gerade Firmen —
+  haben nichts davon, sondern legen unter einer **festen Adresse** immer das neueste
+  Paket bereit (`https://launcher.mojang.com/download/Minecraft.deb`,
+  `https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb`).
+  Wer so eine Adresse eintrug, bekam „Damit kann ich nichts anfangen" — und hatte
+  keine Möglichkeit mehr. Solche Adressen werden jetzt angenommen: Das Programm liest
+  die Fassung aus dem Paket selbst ab und vergleicht sie mit der installierten.
+* ⭐ **Dabei wird nicht das ganze Paket geladen.** Ein `.deb` ist ein Archiv, in dem
+  die Paketangaben **ganz vorne** liegen. Es werden daher nur die ersten 256 KiB
+  geholt (HTTP-Teilabruf). Gemessen an Google Chrome: **256 KiB statt 127 MiB — 0,2 %**,
+  und die Fassung stand korrekt darin. Ohne das hätte jeder Programmstart für jede
+  solche Zeile hunderte Megabyte geladen.
+* 🔴 **„Das ist eine Webseite, keine Datei" statt „geht nicht".** Der häufigste Fall
+  in der Praxis: Der Nutzer kopiert die Seite, auf der der Download-**Knopf** steht
+  (z. B. `minecraft.net/download`) — völlig naheliegend, denn dort holt er das Programm
+  ja auch selbst. Diese Adresse führt aber zu einer Seite zum Anschauen, nicht zu einer
+  Datei. Statt einer Absage erklärt das Fenster jetzt den Weg zur richtigen Adresse:
+  rechte Maustaste auf den Download-Knopf → „Link-Adresse kopieren".
+* Sicherheitshalber wird geprüft, dass unter der Adresse wirklich ein Debian-Paket
+  liegt (Archiv-Kennung), bevor irgendetwas ausgewertet wird — sonst würde eine
+  HTML-Fehlerseite als Paketangabe gedeutet. Prüfsummen bietet ein Hersteller hier
+  meist nicht an; das Programm sagt das ehrlich, statt zu schweigen.
+
+---
+
+**The fourth way to add a source: the fixed download address.**
+
+* Programs without a GitHub project used to be a dead end — only GitHub, npm and
+  Flathub addresses were accepted. Direct `.deb` addresses now work too: the version
+  is read from the package itself.
+* Only the first 256 KiB are fetched (HTTP range request), because a `.deb` keeps its
+  package data at the very front. Measured on Google Chrome: 256 KiB instead of 127 MiB.
+* Pasting a *web page* instead of a file address now explains how to get the right
+  address, instead of just refusing.
+
 ## 1.6 — 22.07.2026
 
 * 🔴 **Es wurde nach dem Passwort gefragt, wo keines noetig ist.** Der Vorschau-Dialog

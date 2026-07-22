@@ -127,10 +127,12 @@ Bei manchen Programmen steht in der Zeile *Quelle unbekannt* und daneben der Kno
 Das bedeutet: Das Programm konnte nicht herausfinden, wo die neueste Fassung liegt. Bei vielen
 Programmen steht diese Angabe im Paket selbst — bei manchen aber nicht.
 
-**Lösung:** Klicken Sie auf *Quelle eintragen*. Öffnen Sie die Projektseite des Programms im
-Browser, kopieren Sie die Adresse aus der Adresszeile und fügen Sie sie in das Feld ein.
+**Lösung:** Klicken Sie auf *Quelle eintragen*. Es gibt zwei Möglichkeiten — die eine oder die
+andere reicht.
 
-Alle diese Schreibweisen werden verstanden:
+**Möglichkeit 1: die Projektseite.** Öffnen Sie die Projektseite des Programms im Browser,
+kopieren Sie die Adresse aus der Adresszeile und fügen Sie sie in das Feld ein. Alle diese
+Schreibweisen werden verstanden:
 
 ```
 https://github.com/besitzer/projekt
@@ -141,7 +143,28 @@ https://www.npmjs.com/package/paketname
 https://flathub.org/apps/programm.kennung
 ```
 
+**Möglichkeit 2: die direkte Adresse der `.deb`-Datei.** Manche Hersteller haben gar keine
+Projektseite, sondern legen unter einer festen Adresse immer das neueste Paket bereit. Diese
+Adresse endet auf `.deb`:
+
+```
+https://launcher.mojang.com/download/Minecraft.deb
+https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
+```
+
+> ⚠️ **Wichtig: Das ist nicht die Adresse der Download-Seite.**
+> Die Seite, auf der der Download-Knopf steht (z. B. `minecraft.net/de-de/download`), ist eine
+> Seite zum Anschauen — keine Datei. Sie funktioniert hier nicht.
+>
+> **So kommen Sie an die richtige Adresse:** Klicken Sie auf der Download-Seite mit der
+> **rechten** Maustaste auf den Download-Knopf und wählen Sie **„Link-Adresse kopieren"**.
+> Was Sie dann in der Zwischenablage haben, endet auf `.deb` und ist genau das Richtige.
+
 Danach wird dieses Programm für immer mitgeprüft.
+
+> 💡 **Keine Sorge wegen der Datenmenge:** Um nur die Versionsnummer abzulesen, wird nicht das
+> ganze Paket geladen, sondern nur dessen Anfang (256 KiB) — bei Google Chrome sind das 0,2 %
+> statt 127 MiB.
 
 ---
 

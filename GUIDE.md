@@ -125,10 +125,10 @@ Some rows say *source unknown* and offer a button **Add source**.
 That means the program could not work out where the newest version lives. Many packages carry
 that information; some do not.
 
-**Solution:** click *Add source*, open the project page in your browser, copy the address from
-the address bar and paste it into the field.
+**Solution:** click *Add source*. Either of two things works.
 
-All of these are understood:
+**Option 1: the project page.** Open it in your browser, copy the address from the address bar
+and paste it into the field. All of these are understood:
 
 ```
 https://github.com/owner/project
@@ -139,7 +139,24 @@ https://www.npmjs.com/package/packagename
 https://flathub.org/apps/program.id
 ```
 
+**Option 2: the direct address of the `.deb` file.** Some vendors have no project page at all
+and instead keep the newest package at a fixed address. Such an address ends in `.deb`:
+
+```
+https://launcher.mojang.com/download/Minecraft.deb
+https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
+```
+
+> ⚠️ **This is not the address of the download page.** A page carrying a download *button*
+> (e.g. `minecraft.net/download`) is a page to look at, not a file, and will not work here.
+>
+> **To get the right address:** right-click the download button on that page and choose
+> **"Copy link address"**. What you get ends in `.deb`.
+
 From then on that program is checked automatically.
+
+> 💡 **No need to worry about data usage:** to read the version number only the first 256 KiB of
+> the package are fetched, not the whole file — for Google Chrome that is 0.2 % instead of 127 MiB.
 
 ---
 

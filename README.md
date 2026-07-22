@@ -24,7 +24,10 @@ updates them at the press of a button.
 
 From the program itself wherever possible — `Homepage` and `Vcs` fields of Debian packages, the
 built-in update information of AppImages. That is why it also works for programs it has never
-seen. If nothing is found, you enter the project page **once**.
+seen. If nothing is found, you enter something **once**: either the project page (GitHub, npm,
+Flathub) **or** the fixed address of a `.deb` file, as offered by vendors without a project page
+(`…/Minecraft.deb`). To read the version there, only the first 256 KiB of the package are
+fetched, not the whole file.
 
 ## Principles
 

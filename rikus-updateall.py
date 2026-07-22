@@ -34,7 +34,7 @@ import gi
 gi.require_version('Gtk', '3.0')
 from gi.repository import Gtk, Pango, GLib, Gdk           # noqa: E402
 
-VERSION = '1.6'
+VERSION = '1.7'
 PROGRAMM = 'Rikus Updateall'
 
 # Ein Programm, das Updates meldet, muss sich selbst prüfen können - alles
@@ -503,6 +503,11 @@ def adresse_deuten(text):
     Erlaubt bewusst vieles: ganze URL, mit oder ohne https://, mit /releases
     hintendran, oder einfach nur `besitzer/projekt`. Der Nutzer soll nicht
     raten muessen, welche Form die richtige ist.
+
+    Sonderfall 'webseite': Eine Adresse, die zwar eine Adresse IST, aber auf
+    eine Seite zum Anschauen zeigt statt auf eine Datei. Die kann das Programm
+    nicht auswerten - aber es weiss dann wenigstens, WARUM nicht, und kann dem
+    Nutzer sagen, was er stattdessen braucht, statt bloss „geht nicht".
     """
     text = (text or '').strip().rstrip('/')
     for dienst, art in (('github.com', 'github'),):
@@ -520,6 +525,16 @@ def adresse_deuten(text):
         return ('npm', '/'.join(teile) if rest.startswith('@') else teile[0])
     if 'flathub.org/apps/' in text:
         return ('flathub', text.split('flathub.org/apps/', 1)[1].split('/')[0])
+    # ⭐ Der vierte Weg: eine feste Adresse, unter der der Hersteller IMMER das
+    # neueste Paket bereitlegt (z. B. https://launcher.mojang.com/download/
+    # Minecraft.deb). Sehr verbreitet bei Firmen, die kein GitHub benutzen -
+    # und vorher eine Sackgasse: Wer kein GitHub hat, bekam „Quelle unbekannt"
+    # und konnte nichts dagegen tun.
+    if re.match(r'https?://', text, re.I):
+        pfad = text.split('?', 1)[0].split('#', 1)[0]
+        if pfad.lower().endswith('.deb'):
+            return ('deb', text)
+        return ('webseite', text)
     # Nur "besitzer/projekt" ohne alles drumherum
     if re.fullmatch(r'[\w.-]+/[\w.-]+', text):
         return ('github', text)
@@ -655,11 +670,97 @@ def _netz(url, schluessel=None):
     return wert
 
 
+# Wie viel vom Anfang eines .deb geholt wird, um die Fassung abzulesen.
+# 🔴 WARUM NICHT DIE GANZE DATEI: Manche Pakete sind hunderte Megabyte gross.
+# Ein Programm, das bei JEDEM Start fuer jede Zeile ein volles Paket laedt,
+# ist unbenutzbar - und auf einer schwachen Leitung sogar schaedlich.
+# Ein .deb ist ein ar-Archiv, und die Paketangaben (control.tar) liegen GANZ
+# VORNE, noch vor den Programmdaten. An einem echten Paket gemessen: control.tar.xz
+# war 772 Byte gross und begann nach 132 Byte; 8 KiB haetten bereits gereicht.
+# 256 KiB sind reichlich Puffer fuer Pakete mit langen Installationsskripten.
+DEB_KOPF_BYTES = 262144
+
+
+def deb_angaben_holen(url):
+    """Paketname und Fassung aus einer festen .deb-Adresse lesen.
+
+    Rueckgabe: [paketname, fassung] oder None, wenn es nicht zu klaeren war.
+
+    Holt nur den Anfang der Datei per Teil-Abruf (HTTP Range). Server, die das
+    nicht koennen, schicken die ganze Datei - deshalb wird zusaetzlich nach
+    DEB_KOPF_BYTES aufgehoert zu lesen und die Verbindung geschlossen. Beides
+    zusammen begrenzt die Menge zuverlaessig, egal wie der Server sich verhaelt.
+    """
+    import time
+    import urllib.request
+
+    merker = 'deb:' + url
+    speicher = _speicher_lesen()
+    eintrag = speicher.get(merker)
+    # Wie bei GitHub: Die Automatik darf aus dem Speicher lesen, der Knopf
+    # „Erneut pruefen" (NEU_LADEN) niemals - sonst sagt das Programm „aktuell",
+    # waehrend der Nutzer selbst gerade das Gegenteil sieht.
+    if (eintrag and not NEU_LADEN['an']
+            and (time.time() - eintrag.get('zeit', 0)) < SPEICHER_HAELT):
+        return eintrag.get('wert')
+
+    try:
+        anfrage = urllib.request.Request(url, headers={
+            'User-Agent': f'{PROGRAMM}/{VERSION}',
+            'Range': f'bytes=0-{DEB_KOPF_BYTES - 1}'})
+        with urllib.request.urlopen(anfrage, timeout=30) as antwort:
+            roh = antwort.read(DEB_KOPF_BYTES)
+    except Exception:
+        return None                    # kein Netz ist der Normalfall, kein Fehler
+
+    # 🔴 Erst pruefen, WAS da ankam. Wer diese Zeile weglaesst, reicht eine
+    # HTML-Fehlerseite („404 Not Found") an dpkg-deb weiter und deutet deren
+    # Inhalt als Paketangaben.
+    if not roh.startswith(b'!<arch>\n'):
+        return None
+
+    os.makedirs(KONFIG_ORDNER, exist_ok=True)
+    kopf = os.path.join(KONFIG_ORDNER, 'kopf.deb')
+    paket = fassung = ''
+    try:
+        with open(kopf, 'wb') as f:
+            f.write(roh)
+        # dpkg-deb liest die Angaben auch aus einem Bruchstueck, solange
+        # control.tar vollstaendig darin steckt (gemessen). Reicht es nicht,
+        # meldet es einen Fehler - dann bleiben die Felder leer.
+        for zeile in _lauf('dpkg-deb', '-f', kopf).splitlines():
+            feld, _, wert = zeile.partition(':')
+            if feld.strip().lower() == 'package':
+                paket = wert.strip()
+            elif feld.strip().lower() == 'version':
+                fassung = wert.strip()
+    except OSError:
+        return None
+    finally:
+        try:
+            os.unlink(kopf)
+        except OSError:
+            pass
+
+    if not fassung:
+        return None
+    wert = [paket, fassung]
+    speicher[merker] = {'wert': wert, 'zeit': time.time()}
+    _speicher_schreiben(speicher)
+    return wert
+
+
 def neueste_holen(fund):
     """Neueste Fassung beim Hersteller erfragen. None = konnten wir nicht klaeren."""
     art, ziel = quelle_fuer(fund)
     if not art:
         return None
+    if art == 'deb':
+        # Feste Adresse: Das Paket dort IST die neueste Fassung - es gibt keine
+        # Liste von Ausgaben, in der man nachschlagen koennte. Also nachsehen,
+        # was drinsteht.
+        angaben = deb_angaben_holen(ziel)
+        return angaben[1] if angaben else None
     if art == 'github':
         daten = _netz(f'https://api.github.com/repos/{ziel}/releases/latest')
         return (daten or {}).get('tag_name')
@@ -1410,9 +1511,20 @@ def deb_erneuern(fund, melden=lambda text: None):
     import urllib.request
 
     art, ziel = quelle_fuer(fund)
-    if art != 'github':
-        return False, t('Für dieses Paket ist keine GitHub-Quelle hinterlegt.',
-                        'No GitHub source known for this package.')
+    if art not in ('github', 'deb'):
+        return False, t('Für dieses Paket ist keine Bezugsquelle hinterlegt.',
+                        'No source known for this package.')
+
+    if art == 'deb':
+        # Feste Adresse des Herstellers: keine Auswahl noetig, das Paket dort
+        # ist das aktuelle. Groesse 0 heisst „nicht angekuendigt" - die
+        # Groessenpruefung weiter unten ueberspringt das dann von selbst.
+        # Ein Angebot an Pruefsummen gibt es hier nicht; echtheit_pruefen()
+        # sagt das ehrlich, statt zu schweigen.
+        name = os.path.basename(ziel.split('?', 1)[0].split('#', 1)[0]) or 'paket.deb'
+        adresse, groesse, angebot = ziel, 0, []
+        return _deb_holen_und_setzen(fund, name, adresse, groesse, angebot, melden)
+
     daten = _netz(f'https://api.github.com/repos/{ziel}/releases/latest')
     if not daten:
         return False, t('Der Hersteller antwortet gerade nicht.',
@@ -1440,6 +1552,21 @@ def deb_erneuern(fund, melden=lambda text: None):
     # (rpi-imager_2.0.10_amd64.deb vor rpi-imager-cli_2.0.10_amd64.deb).
     d = sorted(passend, key=lambda x: len(x['name']))[0]
     name, adresse, groesse = d['name'], d['browser_download_url'], d.get('size', 0)
+    return _deb_holen_und_setzen(fund, name, adresse, groesse,
+                                 daten.get('assets') or [], melden)
+
+
+def _deb_holen_und_setzen(fund, name, adresse, groesse, angebot,
+                          melden=lambda text: None):
+    """Der gemeinsame Teil beider .deb-Wege: holen, pruefen, installieren.
+
+    Woher die Adresse stammt - aus einer GitHub-Ausgabe oder aus einer festen
+    Adresse des Herstellers - aendert nichts daran, WIE geprueft und installiert
+    wird. Beide Wege muessen dieselben Sicherungen durchlaufen; darum steht das
+    hier nur einmal. `groesse` 0 heisst „vom Hersteller nicht angekuendigt",
+    `angebot` leer heisst „keine Pruefsummen-Dateien vorhanden".
+    """
+    import urllib.request
 
     werkbank = os.path.join(KONFIG_ORDNER, 'werkbank')
     shutil.rmtree(werkbank, ignore_errors=True)
@@ -1482,7 +1609,7 @@ def deb_erneuern(fund, melden=lambda text: None):
             f'Downloaded package is “{im_paket}” but “{fund.name}” is installed. Aborted.')
 
     # --- Echtheit: bietet der Hersteller eine Prüfsumme an? ---
-    echt, echt_text = echtheit_pruefen(daten.get('assets') or [], name, paket)
+    echt, echt_text = echtheit_pruefen(angebot, name, paket)
     if echt is False:
         shutil.rmtree(werkbank, ignore_errors=True)
         return False, t(
@@ -1983,10 +2110,15 @@ class RikusAktuell(Gtk.Window):
         erklaerung.set_max_width_chars(60)
         erklaerung.set_markup(t(
             f"Für <b>{sicher(fund.name)}</b> ist noch nicht bekannt, wo die neueste "
-            f"Fassung liegt.\n\nKopiere die Projektseite hier hinein — meistens eine "
-            f"GitHub-Adresse. Danach prüft das Programm diese Fassung von allein mit.",
+            f"Fassung liegt.\n\nZwei Dinge werden angenommen:\n"
+            f"• die <b>Projektseite</b> — meistens eine GitHub-Adresse\n"
+            f"• die <b>direkte Adresse einer .deb-Datei</b>, die der Hersteller "
+            f"immer aktuell bereitlegt\n\nDanach prüft das Programm diese Fassung "
+            f"von allein mit.",
             f"It is not yet known where the latest version of <b>{sicher(fund.name)}</b> "
-            f"lives.\n\nPaste the project page here — usually a GitHub address."))
+            f"lives.\n\nTwo things are accepted:\n"
+            f"• the <b>project page</b> — usually a GitHub address\n"
+            f"• the <b>direct address of a .deb file</b> the vendor keeps up to date"))
         kasten.pack_start(erklaerung, False, False, 0)
 
         feld = Gtk.Entry()
@@ -1995,9 +2127,12 @@ class RikusAktuell(Gtk.Window):
         kasten.pack_start(feld, False, False, 0)
 
         beispiel = Gtk.Label(xalign=0)
+        beispiel.set_line_wrap(True)
+        beispiel.set_max_width_chars(60)
         beispiel.set_markup(
             f"<span size='small' foreground='{GRAU}'>"
-            f"{sicher(t('Beispiel: https://github.com/rustdesk/rustdesk', 'Example: https://github.com/rustdesk/rustdesk'))}"
+            f"{sicher(t('Beispiele:  https://github.com/rustdesk/rustdesk', 'Examples:  https://github.com/rustdesk/rustdesk'))}\n"
+            f"{sicher('https://launcher.mojang.com/download/Minecraft.deb')}"
             "</span>")
         kasten.pack_start(beispiel, False, False, 0)
 
@@ -2010,14 +2145,38 @@ class RikusAktuell(Gtk.Window):
             return
 
         art, ziel = adresse_deuten(eingabe)
+        if art == 'webseite':
+            # 🔴 Der haeufigste Fall in der Praxis - und frueher eine Sackgasse:
+            # Der Nutzer kopiert die Seite, auf der der Download-KNOPF steht
+            # (z. B. minecraft.net/download). Das ist voellig verstaendlich, denn
+            # genau dort holt er sich das Programm ja auch selbst. Nur steht
+            # hinter dieser Adresse eine Seite zum Anschauen, keine Datei.
+            # Statt „geht nicht" muss hier stehen, wie man an die richtige
+            # Adresse kommt - sonst hilft die Meldung niemandem weiter.
+            self._sagen(Gtk.MessageType.WARNING,
+                        t('Das ist eine Webseite, keine Datei',
+                          'That is a web page, not a file'),
+                        t('Diese Adresse führt zu einer Seite zum Anschauen. Gebraucht '
+                          'wird die Adresse der Datei selbst.\n\n'
+                          'So kommst du daran: Auf der Seite mit der RECHTEN Maustaste '
+                          'auf den Download-Knopf klicken und „Link-Adresse kopieren" '
+                          'wählen. Die richtige Adresse endet auf .deb — zum Beispiel\n'
+                          'https://launcher.mojang.com/download/Minecraft.deb\n\n'
+                          'Auch gut: die Projektseite, wenn es eine gibt '
+                          '(https://github.com/besitzer/projekt).',
+                          'This address points to a page, not to a file.\n\n'
+                          'Right-click the download button on that page and choose '
+                          '“Copy link address”. The correct address ends in .deb.'))
+            return
         if not art:
             self._sagen(Gtk.MessageType.WARNING,
                         t('Damit kann ich nichts anfangen', 'Cannot use that'),
-                        t('Ich erkenne darin keine Projektadresse. Erwartet wird etwas '
-                          'wie https://github.com/besitzer/projekt — die Adresse, die '
-                          'oben im Browser steht, wenn du auf der Projektseite bist.',
-                          'That does not look like a project address. Expected something '
-                          'like https://github.com/owner/project'))
+                        t('Ich erkenne darin keine Adresse. Erwartet wird entweder eine '
+                          'Projektseite wie https://github.com/besitzer/projekt oder '
+                          'die direkte Adresse einer .deb-Datei.',
+                          'That does not look like an address. Expected either a project '
+                          'page like https://github.com/owner/project or the direct '
+                          'address of a .deb file.'))
             return
         quelle_merken(fund.name, art, ziel)
         self._sagen(Gtk.MessageType.INFO, t('Eingetragen', 'Saved'),
