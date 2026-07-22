@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <!-- Fassung fuer kleine Groessen (unter 32 px): nur der Pfeil.
+       Bauregel aus Rikus Zram: In 16 px wird ein feines Motiv zum Klecks -
+       Symbolentwuerfe IMMER auch in 16 px ansehen, nicht nur gross. -->
+  <defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#f0a030"/><stop offset="1" stop-color="#b35c00"/></linearGradient></defs>
+  <rect width="256" height="256" rx="48" fill="url(#g)"/>
+  <path d="M128 40 L214 148 H166 V216 H90 V148 H42 Z" fill="#fff"/>
+</svg>

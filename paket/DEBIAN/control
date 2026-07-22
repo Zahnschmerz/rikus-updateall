@@ -1,0 +1,31 @@
+Package: rikus-updateall
+Version: 1.0
+Architecture: all
+Maintainer: Gilbert Rikus <gilbert@rikus.info>
+Section: admin
+Priority: optional
+Depends: python3, python3-gi, gir1.2-gtk-3.0, dpkg, apt
+Recommends: polkitd | policykit-1, pkexec | policykit-1
+Suggests: flatpak, npm
+Homepage: https://github.com/Zahnschmerz/rikus-updateall
+Description: Find and update programs that do not come from apt
+ apt only knows packages from configured sources. Everything installed by
+ hand - a .deb downloaded from a website, an AppImage, a program dropped into
+ /usr/local/bin, an npm package - grows old silently. Nothing ever says so.
+ .
+ Rikus Updateall lists exactly those programs, checks each one against its
+ vendor, and updates them on request. It covers manually installed .deb
+ packages, AppImages, Flatpaks, plain program files and npm packages, and it
+ calls a program's own updater where one exists.
+ .
+ The origin is read from the package itself wherever possible - Homepage and
+ Vcs fields for .deb, the built-in update information for AppImages - so it
+ also works for programs it has never heard of. Where nothing is found, the
+ source can be entered once and is remembered.
+ .
+ Nothing is changed without a plain-language preview first. Downloads are
+ verified before anything is replaced, the previous version is kept, and the
+ result is measured afterwards instead of assumed. Administrator rights are
+ requested only for the replacement itself, never for looking.
+ .
+ User interface in German or English, chosen automatically.

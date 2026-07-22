@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#f0a030"/><stop offset="1" stop-color="#b35c00"/></linearGradient></defs>
+  <rect width="256" height="256" rx="48" fill="url(#g)"/>
+  <!-- Karton: das Programm, das nicht aus apt kommt -->
+  <path d="M56 96 L128 62 L200 96 L200 178 L128 212 L56 178 Z" fill="#fff"/>
+  <path d="M56 96 L128 130 L200 96" fill="none" stroke="#b35c00" stroke-width="9" stroke-linejoin="round"/>
+  <path d="M128 130 V212" fill="none" stroke="#b35c00" stroke-width="9"/>
+  <!-- Pfeil nach oben: die neue Fassung -->
+  <g>
+    <circle cx="186" cy="186" r="52" fill="#fff"/>
+    <circle cx="186" cy="186" r="52" fill="none" stroke="#b35c00" stroke-width="8"/>
+    <path d="M186 156 L214 190 H196 V216 H176 V190 H158 Z" fill="#b35c00"/>
+  </g>
+</svg>

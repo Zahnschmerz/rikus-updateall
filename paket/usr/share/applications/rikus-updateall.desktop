@@ -1,0 +1,14 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Rikus Updateall
+GenericName=Programme prüfen, die nicht aus apt kommen
+GenericName[en]=Check programs that do not come from apt
+Comment=Zeigt Programme außerhalb von apt und aktualisiert sie — ohne Terminal
+Comment[en]=Shows programs outside apt and updates them — without a terminal
+Exec=/usr/bin/python3 /opt/rikus-updateall/rikus-updateall.py
+Icon=rikus-updateall
+Terminal=false
+Categories=System;Settings;PackageManager;
+Keywords=update;updates;aktualisieren;Aktualisierung;deb;AppImage;Flatpak;npm;veraltet;Version;apt;updateall;
+StartupNotify=true
