@@ -37,8 +37,14 @@ es noch nie gesehen hat. Findet sich nichts, trägt man die Projektseite **einma
 
 ## Installieren
 
+Laden Sie die Datei `rikus-updateall_1.6_all.deb` herunter — sie landet im Ordner
+`Downloads`. Dort **doppelt anklicken** und auf „Paket installieren" klicken.
+**Kein Terminal nötig.**
+
+Wer lieber das Terminal benutzt — bitte mit dem vollständigen Pfad:
+
 ```
-sudo apt install ./rikus-updateall_1.4_all.deb
+sudo apt install ~/Downloads/rikus-updateall_1.6_all.deb
 ```
 
 Danach im Startmenü unter *System*.

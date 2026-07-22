@@ -34,8 +34,13 @@ It works **with and without systemd**, so also on MX Linux and antiX.
 
 ## 3. Installing
 
+Download `rikus-updateall_1.6_all.deb` — it lands in your `Downloads` folder.
+**Double-click it** there and choose “Install package”. **No terminal needed.**
+
+If you prefer the terminal, use the full path:
+
 ```
-sudo apt install ./rikus-updateall_1.4_all.deb
+sudo apt install ~/Downloads/rikus-updateall_1.6_all.deb
 ```
 
 Afterwards **Rikus Updateall** appears in the start menu under *System*.

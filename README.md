@@ -37,8 +37,13 @@ seen. If nothing is found, you enter the project page **once**.
 
 ## Install
 
+Download `rikus-updateall_1.6_all.deb` — it lands in your `Downloads` folder.
+**Double-click it** there and choose “Install package”. **No terminal needed.**
+
+If you prefer the terminal, use the full path:
+
 ```
-sudo apt install ./rikus-updateall_1.4_all.deb
+sudo apt install ~/Downloads/rikus-updateall_1.6_all.deb
 ```
 
 Then find it in the start menu under *System*.

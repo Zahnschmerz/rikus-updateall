@@ -3,6 +3,43 @@
 Alle nennenswerten Änderungen an Rikus Updateall.
 All notable changes to Rikus Updateall.
 
+## 1.6 — 22.07.2026
+
+* 🔴 **Es wurde nach dem Passwort gefragt, wo keines noetig ist.** Der Vorschau-Dialog
+  behauptete „Diese Datei liegt in einem Systemordner" — auch dann, wenn sie in
+  `~/.local/bin` lag, also im eigenen Ordner des Nutzers. Gefunden am 22.07. auf pi5:
+  cloudflared liegt dort als `pi:pi`, und trotzdem lief das Ersetzen ueber `pkexec`.
+  Entschieden wird jetzt an der Wirklichkeit (Schreibrecht am Zielordner, `braucht_root()`),
+  nicht pauschal an der Sorte. Ohne Root laeuft derselbe Befehl direkt — kein Passwort,
+  kein falscher Satz.
+
+## 1.5 — 22.07.2026
+
+**Drei Fehler, die erst auf einem fremden Rechner (Raspberry Pi 5) sichtbar wurden.**
+
+* 🔴 **Der Knopf „Aktualisieren" tat gar nichts — in 1.3 und 1.4.** Beim Einbau des
+  Rückgängig-Knopfes in 1.3 war der Rumpf von `_vorschau_und_start` hinter das
+  `return False` von `_zurueck_fertig` gerutscht: 67 Zeilen unerreichbarer Code.
+  Übrig blieb `knopf.set_sensitive(False)` — der Knopf wurde grau, sonst passierte
+  nichts. Das betraf **jede** Sorte (.deb, AppImage, Flatpak, npm, Programmdatei),
+  nicht nur einen Sonderfall. Gefunden, weil Gilbert am 22.07. auf pi5 klickte und
+  nichts geschah. Nicht früher gefunden, weil die Update-Wege einzeln aufgerufen
+  statt über den Knopf geklickt wurden.
+* 🔴 **Blanke Programmdateien wurden nie gefunden.** `passendes_archiv` verlangte
+  `.tar.gz`/`.tgz`/`.tar.xz`. cloudflared bietet aber gar kein Archiv an, sondern
+  die nackte Datei `cloudflared-linux-arm64` bzw. `-amd64`. Ergebnis auf **jedem**
+  Rechner: „Keine passende Datei beim Hersteller gefunden." Jetzt werden Archive
+  **und** blanke Dateien bedient; blanke werden vor dem Hinlegen auf die
+  ELF-Kennung geprüft, damit keine Textdatei an die Stelle des Programms gerät.
+  `binaer_erneuern` packt nur noch aus, wenn wirklich ein Archiv vorliegt.
+* 🔴 **Die Installationsanleitung war falsch — an fünf Stellen.** Sie sagte
+  `sudo apt install ./rikus-updateall_…deb`. Der Punkt-Schrägstrich heißt „in
+  diesem Ordner"; wer ein Terminal öffnet, sitzt aber im Home-Ordner, nicht in
+  `Downloads`. Ergebnis: `E: Nicht unterstützte Datei`. Jetzt steht überall der
+  Doppelklick-Weg zuerst (wie bei Rikus Zram und Snapshot) und der Terminal-Befehl
+  mit vollem Pfad. Ausgebessert in README.md, README.de.md, ANLEITUNG.md, GUIDE.md
+  und auf updateall.rikus.info.
+
 ## 1.4 — 22.07.2026
 
 ### Deutsch

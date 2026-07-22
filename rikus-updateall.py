@@ -34,7 +34,7 @@ import gi
 gi.require_version('Gtk', '3.0')
 from gi.repository import Gtk, Pango, GLib, Gdk           # noqa: E402
 
-VERSION = '1.4'
+VERSION = '1.6'
 PROGRAMM = 'Rikus Updateall'
 
 # Ein Programm, das Updates meldet, muss sich selbst prüfen können - alles
@@ -879,31 +879,65 @@ FREMDE_SYSTEME = ('apple', 'darwin', 'windows', 'msvc', 'freebsd', 'openbsd',
                   'netbsd', 'android', '.exe', '.dmg', '.msi')
 
 
+# Endungen, die KEINE blanke Programmdatei sind. Alles andere ohne Archiv-Endung
+# gilt als Programmdatei zum direkten Hinlegen.
+KEINE_PROGRAMMDATEI = ('.deb', '.rpm', '.pkg', '.apk', '.snap', '.zip', '.7z',
+                       '.msi', '.exe', '.dmg', '.appimage', '.sig', '.asc',
+                       '.pem', '.sha256', '.sha256sum', '.sha512', '.md5',
+                       '.txt', '.json', '.yml', '.yaml', '.sbom', '.spdx',
+                       '.bz2', '.zst')
+
+
 def passendes_archiv(dateien, programmname):
-    """Fuer Programmdateien: das richtige Archiv aus dem Angebot waehlen.
+    """Fuer Programmdateien: das richtige Archiv ODER die blanke Datei waehlen.
 
     topgrade bietet zehn Dateien an - fuer macOS, Windows, FreeBSD, OpenBSD,
     ARM und x86, je in gnu- und musl-Fassung. Nur EINE davon passt hierher.
+
+    🔴 NICHT NUR ARCHIVE! Am 22.07.2026 auf pi5 aufgefallen: cloudflared bietet
+    ueberhaupt kein Archiv an, sondern die blanke Programmdatei
+    `cloudflared-linux-arm64` (bzw. `-amd64`). Die erste Fassung verlangte
+    `.tar.gz`/`.tgz`/`.tar.xz` und fand deshalb NICHTS - und zwar auf JEDEM
+    Rechner, nicht nur auf ARM. Der Knopf meldete „keine passende Datei".
+    Aufgefallen erst, als Gilbert es auf einem Raspberry Pi benutzte.
     """
     lang, kurz = maschine()
-    gut = []
+    archive, blanke = [], []
     for d in dateien:
         n = d['name'].lower()
-        if not n.endswith(('.tar.gz', '.tgz', '.tar.xz')):
-            continue
         if any(f in n for f in FREMDE_SYSTEME):
             continue
         if 'linux' not in n:
             continue
         if lang not in n and kurz not in n:
             continue
-        gut.append(d)
-    if not gut:
-        return None
-    # gnu vor musl: musl-Fassungen laufen zwar ueberall, sind aber die
-    # Ausweichloesung. Wer glibc hat - und Debian/MX hat es - nimmt gnu.
-    gnu = [d for d in gut if 'gnu' in d['name'].lower()]
-    return (gnu or gut)[0]
+        if n.endswith(('.tar.gz', '.tgz', '.tar.xz')):
+            archive.append(d)
+        elif not n.endswith(KEINE_PROGRAMMDATEI):
+            blanke.append(d)
+    if archive:
+        # gnu vor musl: musl-Fassungen laufen zwar ueberall, sind aber die
+        # Ausweichloesung. Wer glibc hat - und Debian/MX hat es - nimmt gnu.
+        gnu = [d for d in archive if 'gnu' in d['name'].lower()]
+        return (gnu or archive)[0]
+    if blanke:
+        # Kuerzester Name = die Hauptfassung: `cloudflared-linux-amd64` vor
+        # `cloudflared-fips-linux-amd64` (FIPS ist eine Sonderfassung).
+        return sorted(blanke, key=lambda x: len(x['name']))[0]
+    return None
+
+
+def braucht_root(ort):
+    """Muss fuer diesen Platz wirklich nach dem Passwort gefragt werden?
+
+    🔴 NICHT PAUSCHAL FRAGEN: `~/.local/bin` gehoert dem Nutzer selbst. Dort ist
+    kein Passwort noetig, und der Satz „Diese Datei liegt in einem Systemordner"
+    ist schlicht falsch. Am 22.07.2026 auf pi5 aufgefallen: cloudflared liegt in
+    /home/pi/.local/bin (Eigentuemer pi) und wurde trotzdem mit pkexec ersetzt -
+    Gilbert haette ohne Grund sein Passwort eingeben muessen.
+    Entschieden wird an der Wirklichkeit (Schreibrecht am Ordner), nicht am Namen.
+    """
+    return not os.access(os.path.dirname(os.path.abspath(ort)), os.W_OK)
 
 
 def _sha256(pfad):
@@ -1120,7 +1154,8 @@ def binaer_erneuern(fund, melden=lambda text: None):
     """Eine Programmdatei in /usr/local/bin erneuern. BRAUCHT DAS PASSWORT.
 
     Anders als beim AppImage sind hier drei Dinge neu:
-      1. Das Programm kommt als ARCHIV (.tar.gz) und muss ausgepackt werden.
+      1. Das Programm kommt als ARCHIV (.tar.gz) und muss ausgepackt werden -
+         ODER blank ohne jede Verpackung (cloudflared). Beides wird bedient.
       2. Der Zielordner gehoert root - ohne pkexec geht nichts.
       3. Im Archiv liegt die Datei irgendwo drin, oft in einem Unterordner.
 
@@ -1165,40 +1200,56 @@ def binaer_erneuern(fund, melden=lambda text: None):
             f'Es wurde nichts ersetzt.',
             f'ABORTED — the file is not what the vendor states.\n\n{echt_text}')
 
-    # --- Auspacken und die richtige Datei darin suchen ---
-    try:
-        with tarfile.open(archiv) as paket:
-            # Nichts ausserhalb der Werkbank auspacken (Schutz vor praeparierten
-            # Archiven, die '../..' im Pfad tragen).
-            sicher_liste = [m for m in paket.getmembers()
-                            if m.isfile() and not m.name.startswith(('/', '..'))
-                            and '..' not in m.name.split('/')]
-            try:
-                # Ab Python 3.12 gibt es einen eingebauten Schutz. Nutzen, wo da.
-                paket.extractall(werkbank, members=sicher_liste, filter='data')
-            except TypeError:
-                paket.extractall(werkbank, members=sicher_liste)
-    except Exception as fehler:
-        shutil.rmtree(werkbank, ignore_errors=True)
-        return False, t(f'Auspacken fehlgeschlagen: {fehler}',
-                        f'Unpacking failed: {fehler}')
-
+    # --- Archiv auspacken ODER die blanke Programmdatei direkt nehmen ---
+    # 🔴 Nicht blind auspacken: cloudflared und andere liefern die Programmdatei
+    # ohne jede Verpackung. `tarfile.open` waere daran gescheitert und haette
+    # „Auspacken fehlgeschlagen" gemeldet - bei einer voellig heilen Datei.
     gefunden = None
-    for wurzel, _, dateien in os.walk(werkbank):
-        for d in dateien:
-            if d == fund.name:
-                voll = os.path.join(wurzel, d)
-                with open(voll, 'rb') as f:
-                    if f.read(4) == b'\x7fELF':
-                        gefunden = voll
-                        break
-        if gefunden:
-            break
-    if not gefunden:
-        shutil.rmtree(werkbank, ignore_errors=True)
-        return False, t(
-            f'Im Archiv war keine Programmdatei namens „{fund.name}" zu finden.',
-            f'The archive contained no program file named “{fund.name}”.')
+    if tarfile.is_tarfile(archiv):
+        try:
+            with tarfile.open(archiv) as paket:
+                # Nichts ausserhalb der Werkbank auspacken (Schutz vor praeparierten
+                # Archiven, die '../..' im Pfad tragen).
+                sicher_liste = [m for m in paket.getmembers()
+                                if m.isfile() and not m.name.startswith(('/', '..'))
+                                and '..' not in m.name.split('/')]
+                try:
+                    # Ab Python 3.12 gibt es einen eingebauten Schutz. Nutzen, wo da.
+                    paket.extractall(werkbank, members=sicher_liste, filter='data')
+                except TypeError:
+                    paket.extractall(werkbank, members=sicher_liste)
+        except Exception as fehler:
+            shutil.rmtree(werkbank, ignore_errors=True)
+            return False, t(f'Auspacken fehlgeschlagen: {fehler}',
+                            f'Unpacking failed: {fehler}')
+        for wurzel, _, dateien in os.walk(werkbank):
+            for d in dateien:
+                if d == fund.name:
+                    voll = os.path.join(wurzel, d)
+                    with open(voll, 'rb') as f:
+                        if f.read(4) == b'\x7fELF':
+                            gefunden = voll
+                            break
+            if gefunden:
+                break
+        if not gefunden:
+            shutil.rmtree(werkbank, ignore_errors=True)
+            return False, t(
+                f'Im Archiv war keine Programmdatei namens „{fund.name}" zu finden.',
+                f'The archive contained no program file named “{fund.name}”.')
+    else:
+        # Blanke Datei: sie MUSS ein Linux-Programm sein (ELF-Kennung), sonst
+        # legen wir womoeglich eine Textdatei an die Stelle des Programms.
+        with open(archiv, 'rb') as f:
+            kopf = f.read(4)
+        if kopf != b'\x7fELF':
+            shutil.rmtree(werkbank, ignore_errors=True)
+            return False, t(
+                f'Die geladene Datei „{name}" ist weder ein Archiv noch ein '
+                f'Linux-Programm. Es wurde nichts ersetzt.',
+                f'The downloaded file “{name}” is neither an archive nor a Linux '
+                f'program. Nothing was replaced.')
+        gefunden = archiv
 
     # --- Erst jetzt Passwort verlangen: sichern + ersetzen in EINEM Schritt ---
     import shlex
@@ -1209,17 +1260,24 @@ def binaer_erneuern(fund, melden=lambda text: None):
     befehl = (f'cp -p {shlex.quote(fund.ort)} {shlex.quote(gesichert)} && '
               f'install -m 755 {shlex.quote(gefunden)} {shlex.quote(fund.ort)} && '
               f'chown {os.getuid()}:{os.getgid()} {shlex.quote(gesichert)}')
-    melden(t('Warte auf dein Passwort …', 'Waiting for your password …'))
+    # Passwort nur, wo es wirklich noetig ist. Liegt die Datei im eigenen
+    # Ordner, laeuft derselbe Befehl ohne pkexec - siehe braucht_root().
+    mit_passwort = braucht_root(fund.ort)
+    if mit_passwort:
+        melden(t('Warte auf dein Passwort …', 'Waiting for your password …'))
+        vorne = [_werkzeug('pkexec') or 'pkexec']
+    else:
+        melden(t('Ersetze …', 'Replacing …'))
+        vorne = []
     try:
-        ergebnis = subprocess.run([_werkzeug('pkexec') or 'pkexec',
-                                   '/bin/sh', '-c', befehl],
+        ergebnis = subprocess.run(vorne + ['/bin/sh', '-c', befehl],
                                   capture_output=True, text=True, timeout=180)
     except Exception as fehler:
         shutil.rmtree(werkbank, ignore_errors=True)
         return False, t(f'Konnte nicht ausgeführt werden: {fehler}',
                         f'Could not run: {fehler}')
     shutil.rmtree(werkbank, ignore_errors=True)
-    if ergebnis.returncode == 126:
+    if mit_passwort and ergebnis.returncode == 126:
         return False, t('Abgebrochen — es wurde kein Passwort eingegeben.',
                         'Cancelled — no password was entered.')
     if ergebnis.returncode != 0:
@@ -1782,45 +1840,6 @@ class RikusAktuell(Gtk.Window):
             self._quelle_eintragen(fund)
             return
         knopf.set_sensitive(False)
-
-    def _zurueck_fragen(self, fund, zurueck, knopf):
-        """Vor dem Zurücklegen ebenso in Klartext zeigen, was passiert."""
-        frage = Gtk.MessageDialog(
-            transient_for=self, modal=True, message_type=Gtk.MessageType.QUESTION,
-            buttons=Gtk.ButtonsType.OK_CANCEL,
-            text=t(f'{fund.name} auf {zurueck["alte_version"]} zurücksetzen?',
-                   f'Roll {fund.name} back to {zurueck["alte_version"]}?'))
-        passwort = zurueck['sorte'] != 'appimage'
-        frage.format_secondary_text(t(
-            f'Ich lege diese Datei wieder an ihren Platz:\n  {zurueck["gesichert"]}\n\n'
-            f'Sie kommt nach:\n  {zurueck["ort"]}\n\n'
-            f'Die jetzige Fassung {fund.version} wird dabei ersetzt.'
-            + (f'\n\nDafür fragt Linux nach deinem Passwort.' if passwort else
-               f'\n\nKein Passwort nötig.'),
-            f'I will put this file back:\n  {zurueck["gesichert"]}\n\nto:\n  {zurueck["ort"]}\n\n'
-            f'The current version {fund.version} will be replaced.'))
-        antwort = frage.run()
-        frage.destroy()
-        if antwort != Gtk.ResponseType.OK:
-            return
-        knopf.set_sensitive(False)
-        knopf.set_label(t('läuft …', 'working …'))
-        threading.Thread(target=self._zurueck_im_hintergrund,
-                         args=(fund, knopf), daemon=True).start()
-
-    def _zurueck_im_hintergrund(self, fund, knopf):
-        geklappt, text = zurueck_holen(fund.name)
-        GLib.idle_add(self._zurueck_fertig, fund, knopf, geklappt, text)
-
-    def _zurueck_fertig(self, fund, knopf, geklappt, text):
-        knopf.set_label(t('Rückgängig', 'Undo'))
-        knopf.set_sensitive(not geklappt)
-        self._sagen(Gtk.MessageType.INFO if geklappt else Gtk.MessageType.ERROR,
-                    t('Zurückgelegt', 'Restored') if geklappt
-                    else t('Nicht durchgelaufen', 'Failed'), text)
-        if geklappt:
-            self.suche_starten(frisch=True)
-        return False
         # Selbst-Aktualisierer und die Wege ohne eigenen Download (Flatpak, npm,
         # .deb) brauchen keine Datei-Vorschau - dort kennt das Werkzeug den Weg.
         if fund.status == 'selbst' or fund.sorte in ('flatpak', 'npm', 'deb'):
@@ -1840,7 +1859,7 @@ class RikusAktuell(Gtk.Window):
             return
         name, adresse, groesse = kandidat
         mib = groesse / 1024 / 1024 if groesse else 0
-        braucht_passwort = fund.sorte == 'binaer'
+        braucht_passwort = fund.sorte == 'binaer' and braucht_root(fund.ort)
         frage = Gtk.MessageDialog(
             transient_for=self, modal=True, message_type=Gtk.MessageType.QUESTION,
             buttons=Gtk.ButtonsType.OK_CANCEL,
@@ -1888,6 +1907,45 @@ class RikusAktuell(Gtk.Window):
         knopf.set_label(t('lädt …', 'downloading …'))
         threading.Thread(target=self._erneuern_im_hintergrund,
                          args=(fund, knopf), daemon=True).start()
+
+    def _zurueck_fragen(self, fund, zurueck, knopf):
+        """Vor dem Zurücklegen ebenso in Klartext zeigen, was passiert."""
+        frage = Gtk.MessageDialog(
+            transient_for=self, modal=True, message_type=Gtk.MessageType.QUESTION,
+            buttons=Gtk.ButtonsType.OK_CANCEL,
+            text=t(f'{fund.name} auf {zurueck["alte_version"]} zurücksetzen?',
+                   f'Roll {fund.name} back to {zurueck["alte_version"]}?'))
+        passwort = zurueck['sorte'] != 'appimage'
+        frage.format_secondary_text(t(
+            f'Ich lege diese Datei wieder an ihren Platz:\n  {zurueck["gesichert"]}\n\n'
+            f'Sie kommt nach:\n  {zurueck["ort"]}\n\n'
+            f'Die jetzige Fassung {fund.version} wird dabei ersetzt.'
+            + (f'\n\nDafür fragt Linux nach deinem Passwort.' if passwort else
+               f'\n\nKein Passwort nötig.'),
+            f'I will put this file back:\n  {zurueck["gesichert"]}\n\nto:\n  {zurueck["ort"]}\n\n'
+            f'The current version {fund.version} will be replaced.'))
+        antwort = frage.run()
+        frage.destroy()
+        if antwort != Gtk.ResponseType.OK:
+            return
+        knopf.set_sensitive(False)
+        knopf.set_label(t('läuft …', 'working …'))
+        threading.Thread(target=self._zurueck_im_hintergrund,
+                         args=(fund, knopf), daemon=True).start()
+
+    def _zurueck_im_hintergrund(self, fund, knopf):
+        geklappt, text = zurueck_holen(fund.name)
+        GLib.idle_add(self._zurueck_fertig, fund, knopf, geklappt, text)
+
+    def _zurueck_fertig(self, fund, knopf, geklappt, text):
+        knopf.set_label(t('Rückgängig', 'Undo'))
+        knopf.set_sensitive(not geklappt)
+        self._sagen(Gtk.MessageType.INFO if geklappt else Gtk.MessageType.ERROR,
+                    t('Zurückgelegt', 'Restored') if geklappt
+                    else t('Nicht durchgelaufen', 'Failed'), text)
+        if geklappt:
+            self.suche_starten(frisch=True)
+        return False
 
     def _erneuern_im_hintergrund(self, fund, knopf):
         if fund.status == 'selbst':
